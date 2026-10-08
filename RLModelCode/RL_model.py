@@ -13,7 +13,7 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
 
     training = False # Change to False when running inference.py
     cap_size = 10 # Capacitor size
-    optimization_metric = "jitter" # Change to "off_time" or "jitter" based on what you want to optimize for (off_time = minimize off time, jitter = variability in time between successful transmissions)
+    optimization_metric = "off_time" # Change to "off_time" or "jitter" based on what you want to optimize for (off_time = minimize off time, jitter = variability in time between successful transmissions)
 
     adrSimulation = True
     multipleMu = False # This is used for going over different cycle times (5, 10, 15 and 20) during inference
@@ -29,12 +29,34 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
     neg_inaction_reward = -0.5
     gamma = 0.99
 
+    # @property
+    # def training_parameter_suffix(self):
+    #     # capSizeStr = str(self.cap_size)
+    #     if self.optimization_metric == "jitter":
+    #         base = "JITTER_OPT_" + str(self.neg_inaction_reward) + "_INACTION_REWARD_ORIGINAL_ADR_" + self.trainingPayload + "_BYTES_" + self.trainingCapSizeStr + "FARAD_TSF_" + str(self.tsf_max) + "_GAMMA_" + str(self.gamma)  
+    #     else:
+    #         base = "OFF_OPT_" + str(self.neg_inaction_reward) + "_INACTION_REWARD_ORIGINAL_ADR_" + self.trainingPayload + "_BYTES_" + self.trainingCapSizeStr + "FARAD_TSF_" + str(self.tsf_max) + "_GAMMA_" + str(self.gamma)  
+        
+    #     # Dynamically append the seed if one is set
+    #     if self.active_seed is not None:
+    #         return f"{base}_SEED_{self.active_seed}"
+    #     return base
+
+    # @property
+    # def inference_parameter_suffix(self):
+    #     capSizeStr = str(self.cap_size)
+    #     if self.optimization_metric == "jitter":
+    #         return "JITTER_OPT_" + str(self.neg_inaction_reward) + "_IN_REW_ORIGINAL_ADR_" + self.payloadOption + "_B_" + capSizeStr + "F_TSF_" + str(self.tsf_max)
+    #     else:
+    #         return "OFF_OPT_" + str(self.neg_inaction_reward) + "_IN_REW_ORIGINAL_ADR_" + self.payloadOption + "_B_" + capSizeStr + "F_TSF_" + str(self.tsf_max)
+    
     if optimization_metric == "jitter":
-        suffix = "JITTER_OPT" + str(neg_inaction_reward) + "_INACTION_REWARD_ADR_" + trainingPayload + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max) + "_GAMMA_" + str(gamma)  
-        inference_parameter_suffix = "JITTER_OPT_" + str(neg_inaction_reward) + "_INACTION_REWARD_ADR_" + payloadOption + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max)
+        suffix = "JITTER_OPT" + str(neg_inaction_reward) + "_INACTION_REWARD_ORIGINAL_ADR_" + trainingPayload + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max) + "_GAMMA_" + str(gamma)  
+        inference_parameter_suffix = "JITTER_OPT_" + str(neg_inaction_reward) + "_IN_REW_ORIGINAL_ADR_" + payloadOption + "_B_" + capSizeStr + "F_TSF_" + str(tsf_max)
     else:
-        suffix = "OFF_OPT_" + str(neg_inaction_reward) + "_INACTION_REWARD_ADR_" + trainingPayload + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max) + "_GAMMA_" + str(gamma)  
-        inference_parameter_suffix = "OFF_OPT_" + str(neg_inaction_reward) + "_INACTION_REWARD_ADR_" + payloadOption + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max)
+        suffix = "OFF_OPT_" + str(neg_inaction_reward) + "_INACTION_REWARD_ORIGINAL_ADR_" + trainingPayload + "_BYTES_" + capSizeStr + "FARAD_TSF_" + str(tsf_max) + "_GAMMA_" + str(gamma)  
+        inference_parameter_suffix = "OFF_OPT_" + str(neg_inaction_reward) + "_IN_REW_ORIGINAL_ADR_" + payloadOption + "_B_" + capSizeStr + "F_TSF_" + str(tsf_max)
+    
     ti = 30
     downSampleFactor = 3 # Change based on ti and dataset sample frequency (for shuffled dataset frequency is every 10 sec) --> e.g. if we want to sample every 30 sec, we only keep every 3 samples
     nrOfInterpolationPoints = 29 # Change based on ti and dataset sample frequency (for our teg + solar dataset frequency is every 15 min)
@@ -98,45 +120,79 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
     C_max_norm = 10
     # --- END NORMALIZATION CONSTANTS ---
 
-    cummulativeReward = 0
-    cummulativeRewardList = list()
-    ewmaCapVoltageList = list() # uncomment when using ewma
-    finalHarvestingCurrentList = list()
-    harvestingCurrentList = list()
-    rewardList = list()
-    global_counter = 0
-    capVoltageList = list()
-    irradianceList = list()
-    soilTempList = list()
-    airTempList = list()
-    dataList = list()
-    tCycleList = list()
-    feasibilityList = list()
-    deviceStateList = list()
-    restartList = list()
-    failList = list()
+    # cummulativeReward = 0
+    # cummulativeRewardList = list()
+    # ewmaCapVoltageList = list() # uncomment when using ewma
+    # finalHarvestingCurrentList = list()
+    # harvestingCurrentList = list()
+    # rewardList = list()
+    # global_counter = 0
+    # capVoltageList = list()
+    # irradianceList = list()
+    # soilTempList = list()
+    # airTempList = list()
+    # dataList = list()
+    # tCycleList = list()
+    # feasibilityList = list()
+    # deviceStateList = list()
+    # restartList = list()
+    # failList = list()
 
-    final_step = 0
+    # final_step = 0
 
-    n = 0  
-    total_n = 0
+    # n = 0  
+    # total_n = 0
 
     
-    fail = 0
-    off_simulation_happened = False
-    rewardBeforeOffState = 0
-    first_iteration = False
-    already_in_off = False
-    sumOffReward = 0
+    # fail = 0
+    # off_simulation_happened = False
+    # rewardBeforeOffState = 0
+    # first_iteration = False
+    # already_in_off = False
+    # sumOffReward = 0
 
-    adrCount = 0
+    # adrCount = 0
 
 
-    onCount = 0
+    # onCount = 0
 
 
 
     def initialize(self):
+        # --- WIPE ALL TRACKING LISTS CLEAN ON INITIALIZATION ---
+        self.cummulativeRewardList = []
+        self.finalHarvestingCurrentList = []
+        self.harvestingCurrentList = []
+        self.rewardList = []
+        self.capVoltageList = []
+        self.irradianceList = []
+        self.soilTempList = []
+        self.airTempList = []
+        self.dataList = []
+        self.tCycleList = []
+        self.feasibilityList = []
+        self.deviceStateList = []
+        self.restartList = []
+        self.failList = []
+        self.plList = []
+        self.sfList = []
+        self.tsfList = []
+        self.successList = []
+        self.ewmaCapVoltageList = []
+        # ------------------------------------------------------------
+        # --- NEW: WIPE ALL STATE COUNTERS CLEAN ---
+        self.n = 0
+        self.total_n = 0
+        self.global_counter = 0
+        self.cummulativeReward = 0
+        self.adrCount = 0
+        self.fail = 0
+        self.sumOffReward = 0
+        self.onCount = 0
+        self.already_in_off = False
+        self.off_simulation_happened = False
+        self.first_iteration = False
+        # ------------------------------------------
         self.OFF = []
         self.I = []
         self.Ih = 0.02
@@ -224,6 +280,9 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
         # Initialize tsf list
         self.tsfList = []
 
+        #initialize success list
+        self.successList = []
+
 
         ## General Current Values
         self.iCycle = 0
@@ -296,9 +355,9 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
 
         print("Loading RSSI and ADR data")
         if self.training == True:
-            self.adrList = pd.read_csv('training_adr_simulation_' + self.trainingPayload + '_bytes_payload.csv', sep = ',') # Test with augmented combined data
+            self.adrList = pd.read_csv('original_training_adr_simulation_' + self.trainingPayload + '_bytes_payload.csv', sep = ',') # Test with augmented combined data
         else:
-            self.adrList = pd.read_csv('validation_adr_simulation_' + self.payloadOption + '_bytes_payload.csv', sep = ',') # Test with augmented combined data
+            self.adrList = pd.read_csv('original_validation_adr_simulation_' + self.payloadOption + '_bytes_payload.csv', sep = ',') # Test with augmented combined data
 
         self.adrCurrentList = self.adrList.iloc[:, 7]
         self.adrCurrentList = self.adrCurrentList.to_numpy()
@@ -404,6 +463,7 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
 
         self.tCycleIncreaseThresh = math.floor(self.final_step/4)
         self.tCycleIncreaseCounter = 0
+
         
     def __init__(self):
         self.initialize()
@@ -429,6 +489,12 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
             for num in data:
                 writer.writerow([num])
 
+
+    # def set_cap_size(self, new_cap_size):
+    #     self.cap_size = new_cap_size
+    #     self.c = new_cap_size
+    #     self.update_leakage_current(self.c)
+    #     print(f"Capacitor size updated to {new_cap_size} F and leakage current recalculated.")
 
 
     # Forward calculation for the next capacitor voltage
@@ -645,6 +711,7 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
             self.plList.append(self.pl)
             self.sfList.append(self.sf)
             self.tsfList.append(self.tsf)
+            self.successList.append(1 if self.b2 == 1 else 0)
 
             self.It = self.read_from_harvesting_current_list(self.n)
             self.finalHarvestingCurrentList.append(self.It)
@@ -780,7 +847,8 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
             "failList": self.failList,
             "payloadList": self.plList,
             "sfList": self.sfList,
-            "tsfList": self.tsfList
+            "tsfList": self.tsfList,
+            "successList": self.successList
         }
 
         for filename, data_list in data_map.items():
@@ -1028,6 +1096,7 @@ class FullyTaskedBatteryLessWorldEnv(gymnasium.Env):
             self.plList.append(self.pl)
             self.sfList.append(self.sf)
             self.tsfList.append(self.tsf)
+            self.successList.append(1 if self.b2 == 1 else 0)
 
             # Advance dataset clock
             self.It = self.read_from_harvesting_current_list(self.n)

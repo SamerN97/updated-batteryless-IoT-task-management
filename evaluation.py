@@ -49,14 +49,25 @@ trend_data = {
     'median_off_time_duration': {label: [] for label in labels_all}  # Updated key
 }
 
+seeds = [42, 123, 456, 789, 999]
+# seeds = [222, 333, 444, 555] 
+# seeds = [42, 123, 456, 789, 999, 0, 222, 333, 444, 555]  # Extended seed list for robustness
+
+# --- Replace your current trend_data dictionary with these two ---
+metric_keys = ['mean_iti', 'mean_daily_success', 'median_survival', 'median_max_daily_iti', 'median_off_time_duration']
+
+trend_data_mean = {key: {label: [] for label in labels_all} for key in metric_keys}
+trend_data_std = {key: {label: [] for label in labels_all} for key in metric_keys}
+
 # ---------------------------------------------------------
 # 2. Helper Functions
 # ---------------------------------------------------------
 def load_agent_data(path):
-    try:
-        return pd.read_csv(path, header=None).iloc[:, 0].to_numpy()
-    except Exception:
+    if not os.path.exists(path):
+        print(f"ERROR - FILE NOT FOUND:\n{path}\n")
         return np.array([])
+    return pd.read_csv(path, header=None).iloc[:, 0].to_numpy()
+        
 
 def get_tbs(success_array, agent_type=None, eps=0.01):
     if agent_type == "jitter": # Keeping backend type mapping intact
@@ -138,7 +149,6 @@ print("Extracting trend data across all capacitor sizes...")
 
 for c in cap_sizes:
     V_thresh = thresh_map[c]
-    
     capSizeStr = str(int(c)) if c.is_integer() else str(c)
     V_thresh_str = str(V_thresh)
     
@@ -148,23 +158,74 @@ for c in cap_sizes:
     baseline_suffix_3_45 = f"{base_suffix}_FARAD_3.45V_THRESH"
     other_suffix = f"{base_suffix}FARAD"
     
-    train_jitter = f"ORIGINAL_JITTER_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{trainingPayload}_BYTES_{trainingCapSizeStr}FARAD_TSF_{tsf_max}_GAMMA_{gamma}"
-    infer_jitter = f"ORIGINAL_JITTER_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{payloadOption}_BYTES_{capSizeStr}FARAD_TSF_{tsf_max}"
+    train_jitter_base = f"JITTER_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{trainingPayload}_BYTES_{trainingCapSizeStr}FARAD_TSF_{tsf_max}_GAMMA_{gamma}"
+    infer_jitter_base = f"JITTER_OPT_{training_neg_inaction_reward}_IN_REW_ORIGINAL_ADR_{payloadOption}_B_{capSizeStr}F_TSF_{tsf_max}"
     
-    train_off = f"ORIGINAL_OFF_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{trainingPayload}_BYTES_{trainingCapSizeStr}FARAD_TSF_{tsf_max}_GAMMA_{gamma}"
-    infer_off = f"ORIGINAL_OFF_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{payloadOption}_BYTES_{capSizeStr}FARAD_TSF_{tsf_max}"
+    train_off_base = f"OFF_OPT_{training_neg_inaction_reward}_INACTION_REWARD_ORIGINAL_ADR_{trainingPayload}_BYTES_{trainingCapSizeStr}FARAD_TSF_{tsf_max}_GAMMA_{gamma}"
+    infer_off_base = f"OFF_OPT_{training_neg_inaction_reward}_IN_REW_ORIGINAL_ADR_{payloadOption}_B_{capSizeStr}F_TSF_{tsf_max}"
 
     folder = 'RLModelData/experiments_solar/inference_experiments'
     
-    try:
-        ag_jit = load_agent_data(f'{folder}/rewardList{infer_jitter}__{train_jitter}.csv')
-        print(f"Successfully loaded agent jitter data for cap size {c} with shape {ag_jit.shape}")
-        ag_off = load_agent_data(f'{folder}/rewardList{infer_off}__{train_off}.csv')
-        print(f"Successfully loaded agent off-time data for cap size {c} with shape {ag_off.shape}")
-        
-        if len(ag_jit) == 0 or len(ag_off) == 0:
-            raise ValueError("Agent data is empty.")
+    # --- A. Process Seeded RL Agents ---
+    agent_metrics = { 'jitter': {k: [] for k in metric_keys}, 'off_time': {k: [] for k in metric_keys} }
+    
+    for seed in seeds:
+        try:
+            # Assuming files were saved with _SEED_{seed}
+            ag_jit = load_agent_data(f'{folder}/rewardList{infer_jitter_base}__{train_jitter_base}_SEED_{seed}.csv')
+            ag_off = load_agent_data(f'{folder}/rewardList{infer_off_base}__{train_off_base}_SEED_{seed}.csv')
 
+            print(f"Loaded data for seed {seed} at cap size {c}: Jitter length = {len(ag_jit)}, Off-Time length = {len(ag_off)}")
+            
+            if len(ag_jit) > 0:
+                tbs = get_tbs(ag_jit, agent_type="jitter")
+                agent_metrics['jitter']['mean_iti'].append(np.mean(tbs) if len(tbs) > 0 else np.nan)
+                
+                daily = get_daily_success_counts(ag_jit, agent_type="jitter")
+                agent_metrics['jitter']['mean_daily_success'].append(np.mean(daily) if len(daily) > 0 else 0)
+                
+                surv = get_survival_time(ag_jit, agent_type="jitter")
+                agent_metrics['jitter']['median_survival'].append(np.median(surv) if len(surv) > 0 else 0)
+                
+                daily_max = get_daily_max_iti(ag_jit, agent_type="jitter")
+                agent_metrics['jitter']['median_max_daily_iti'].append(np.median(daily_max) if len(daily_max) > 0 else np.nan)
+                
+                b_dur = get_off_time_durations(ag_jit, agent_type="jitter")
+                agent_metrics['jitter']['median_off_time_duration'].append(np.median(b_dur) if len(b_dur) > 0 else np.nan)
+
+            if len(ag_off) > 0:
+                tbs = get_tbs(ag_off, agent_type="off_time")
+                agent_metrics['off_time']['mean_iti'].append(np.mean(tbs) if len(tbs) > 0 else np.nan)
+                
+                daily = get_daily_success_counts(ag_off, agent_type="off_time")
+                agent_metrics['off_time']['mean_daily_success'].append(np.mean(daily) if len(daily) > 0 else 0)
+                
+                surv = get_survival_time(ag_off, agent_type="off_time")
+                agent_metrics['off_time']['median_survival'].append(np.median(surv) if len(surv) > 0 else 0)
+                
+                daily_max = get_daily_max_iti(ag_off, agent_type="off_time")
+                agent_metrics['off_time']['median_max_daily_iti'].append(np.median(daily_max) if len(daily_max) > 0 else np.nan)
+                
+                b_dur = get_off_time_durations(ag_off, agent_type="off_time")
+                agent_metrics['off_time']['median_off_time_duration'].append(np.median(b_dur) if len(b_dur) > 0 else np.nan)
+
+        except Exception as e:
+            print(f"Skipping seed {seed} for cap size {c} due to missing data: {e}")
+
+    print(f"\n--- Debug: Cap Size {c} ---")
+    print(f"Jitter Mean ITI across seeds: {agent_metrics['jitter']['mean_iti']}")
+    print(f"Off-Time Mean ITI across seeds: {agent_metrics['off_time']['mean_iti']}")
+
+    # Aggregate agent metrics across seeds
+    for metric in metric_keys:
+        trend_data_mean[metric]['Agent (ITI)'].append(np.nanmean(agent_metrics['jitter'][metric]) if agent_metrics['jitter'][metric] else np.nan)
+        trend_data_std[metric]['Agent (ITI)'].append(np.nanstd(agent_metrics['jitter'][metric]) if agent_metrics['jitter'][metric] else 0)
+        
+        trend_data_mean[metric]['Agent (Off-Time)'].append(np.nanmean(agent_metrics['off_time'][metric]) if agent_metrics['off_time'][metric] else np.nan)
+        trend_data_std[metric]['Agent (Off-Time)'].append(np.nanstd(agent_metrics['off_time'][metric]) if agent_metrics['off_time'][metric] else 0)
+
+    # --- B. Process Baselines (No variance/seeds) ---
+    try:
         b_succ = np.loadtxt(f'staticThreshModelData/successList{baseline_suffix_opt}.csv', delimiter='\t')
         b_state = pd.read_csv(f"staticThreshModelData/deviceStateList{baseline_suffix_opt}.csv", header=None).iloc[:, 0].astype(bool)
         
@@ -182,56 +243,71 @@ for c in cap_sizes:
         
         a_succ = np.loadtxt(f'astarModelData/successList{other_suffix}.csv', delimiter='\t')
         a_state = pd.read_csv(f"astarModelData/deviceStateList{other_suffix}.csv", header=None).iloc[:, 0].astype(bool)
-        
-        target_len = len(p_succ)
-        ag_jit = ag_jit[:target_len] if len(ag_jit) > target_len else ag_jit
-        ag_off = ag_off[:target_len] if len(ag_off) > target_len else ag_off
 
-        succ_arrays = [ag_jit, ag_off, b_succ, b_succ_1_9, b_succ_3_45, p_succ, o_succ, a_succ]
-        state_arrays = [ag_jit, ag_off, b_state, b_state_1_9, b_state_3_45, p_state, o_state, a_state]
-        types = ["jitter", "off_time", None, None, None, None, None, None]
+        succ_arrays = [b_succ, b_succ_1_9, b_succ_3_45, p_succ, o_succ, a_succ]
+        state_arrays = [b_state, b_state_1_9, b_state_3_45, p_state, o_state, a_state]
+        baseline_labels = ['Opt. Static Thresh.', 'Static (1.9V)', 'Static (3.45V)', 'Approx. Pred.', 'ST Oracle', 'AsTAR']
 
-        for i, label in enumerate(labels_all):
-            tbs = get_tbs(succ_arrays[i], agent_type=types[i])
-            trend_data['mean_iti'][label].append(np.mean(tbs) if len(tbs) > 0 else np.nan)
+        for i, label in enumerate(baseline_labels):
+            tbs = get_tbs(succ_arrays[i], agent_type=None)
+            trend_data_mean['mean_iti'][label].append(np.mean(tbs) if len(tbs) > 0 else np.nan)
             
-            daily = get_daily_success_counts(succ_arrays[i], agent_type=types[i])
-            trend_data['mean_daily_success'][label].append(np.mean(daily) if len(daily) > 0 else 0)
+            daily = get_daily_success_counts(succ_arrays[i], agent_type=None)
+            trend_data_mean['mean_daily_success'][label].append(np.mean(daily) if len(daily) > 0 else 0)
             
-            surv = get_survival_time(state_arrays[i], agent_type=types[i])
-            trend_data['median_survival'][label].append(np.median(surv) if len(surv) > 0 else 0)
+            surv = get_survival_time(state_arrays[i], agent_type=None)
+            trend_data_mean['median_survival'][label].append(np.median(surv) if len(surv) > 0 else 0)
 
-            daily_max = get_daily_max_iti(succ_arrays[i], agent_type=types[i])
-            trend_data['median_max_daily_iti'][label].append(np.median(daily_max) if len(daily_max) > 0 else np.nan)
+            daily_max = get_daily_max_iti(succ_arrays[i], agent_type=None)
+            trend_data_mean['median_max_daily_iti'][label].append(np.median(daily_max) if len(daily_max) > 0 else np.nan)
             
-            b_dur = get_off_time_durations(state_arrays[i], agent_type=types[i])
-            trend_data['median_off_time_duration'][label].append(np.median(b_dur) if len(b_dur) > 0 else np.nan)
+            b_dur = get_off_time_durations(state_arrays[i], agent_type=None)
+            trend_data_mean['median_off_time_duration'][label].append(np.median(b_dur) if len(b_dur) > 0 else np.nan)
+            
+            # Baselines have 0 standard deviation
+            for metric in metric_keys:
+                trend_data_std[metric][label].append(0)
 
     except Exception as e:
-        print(f"Skipping cap size {c} due to missing data: {e}")
-        for label in labels_all:
-            trend_data['mean_iti'][label].append(np.nan)
-            trend_data['mean_daily_success'][label].append(np.nan)
-            trend_data['median_survival'][label].append(np.nan)
-            trend_data['median_max_daily_iti'][label].append(np.nan)
-            trend_data['median_off_time_duration'][label].append(np.nan)
+        print(f"Skipping baseline for cap size {c} due to missing data: {e}")
+        for label in ['Opt. Static Thresh.', 'Static (1.9V)', 'Static (3.45V)', 'Approx. Pred.', 'ST Oracle', 'AsTAR']:
+            for metric in metric_keys:
+                trend_data_mean[metric][label].append(np.nan)
+                trend_data_std[metric][label].append(0)
 
 print("Data extraction complete. Generating plots...")
 
 # ---------------------------------------------------------
 # 4. Plotting the Trends
 # ---------------------------------------------------------
-out_dir = "graphs_original/comparison_all/trend_lines"
+out_dir = "graphs_new/comparison_all/trend_lines"
 os.makedirs(out_dir, exist_ok=True)
 
 def plot_trend(metric_key, title, ylabel, filename, use_log=False, ymin=None, ymax=None):
     plt.figure(figsize=(10, 6))
     for i, label in enumerate(labels_all):
-        y_data = trend_data[metric_key][label]
+        y_mean = np.array(trend_data_mean[metric_key][label])
+        y_std = np.array(trend_data_std[metric_key][label])
         
-        plt.plot(cap_sizes, y_data, label=label.replace('\n', ' '), 
+        # Filter out NaN values so the plot line doesn't break
+        valid_mask = ~np.isnan(y_mean)
+        x_valid = np.array(cap_sizes)[valid_mask]
+        y_mean_valid = y_mean[valid_mask]
+        y_std_valid = y_std[valid_mask]
+        
+        if len(x_valid) == 0:
+            continue
+            
+        plt.plot(x_valid, y_mean_valid, label=label.replace('\n', ' '), 
                  color=colors[i], marker=markers[i], linestyle=linestyles[i],
                  linewidth=3, markersize=8, alpha=0.9)
+                 
+        # Add shaded confidence interval if standard deviation > 0 (RL Agents)
+        if np.any(y_std_valid > 0):
+            plt.fill_between(x_valid, 
+                             y_mean_valid - y_std_valid, 
+                             y_mean_valid + y_std_valid, 
+                             color=colors[i], alpha=0.2)
     
     if use_log: 
         plt.yscale('log')
@@ -239,7 +315,6 @@ def plot_trend(metric_key, title, ylabel, filename, use_log=False, ymin=None, ym
     if ymin is not None or ymax is not None:
         plt.ylim(bottom=ymin, top=ymax)
         
-    # plt.title(title, fontsize=16, fontweight='bold')
     plt.xlabel('Capacitor Size (Farads)', fontsize=14)
     plt.ylabel(ylabel, fontsize=14)
     
@@ -248,7 +323,6 @@ def plot_trend(metric_key, title, ylabel, filename, use_log=False, ymin=None, ym
     plt.grid(True, which="both", ls="--", alpha=0.5)
     
     plt.legend(loc='best', fontsize=12, framealpha=0.85)
-
     plt.tight_layout()
     
     filepath = os.path.join(out_dir, filename)

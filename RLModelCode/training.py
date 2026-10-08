@@ -4,6 +4,9 @@ from stable_baselines3.common.env_checker import check_env
 from gymnasium.wrappers import TimeLimit
 from torch.utils.tensorboard import SummaryWriter
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback, CheckpointCallback
+import random
+import numpy as np
+import torch
 
 
 combined = False # Change to false when only using solar
@@ -12,7 +15,7 @@ capSizeStr = "random_0.5_10"
 tsf_max = 1000
 neg_inaction_reward = -0.5
 gam = 0.99
-optimization_metric = "jitter" # Change to "off_time" or "jitter" based on what you want to optimize for (off_time = minimize off time, jitter = variability in time between successful transmissions)
+optimization_metric = "off_time" # Change to "off_time" or "jitter" based on what you want to optimize for (off_time = minimize off time, jitter = variability in time between successful transmissions)
 
 
 if optimization_metric == "jitter":
@@ -26,38 +29,49 @@ episode_length = steps_in_24_h * days_per_episode # This is the number of steps
 # env = BatteryLessWorldEnv()
 env = FullyTaskedBatteryLessWorldEnv()
 
-# Sync parameters to the instance (NOT WORKING, CHANGE IN ENVIRONMENT ITSELF!)
-env.training = True  # MUST BE TRUE FOR TRAINING REWARDS AND DATA SHUFFLING
-env.combined = combined
-env.trainingPayload = trainingPayload
-env.training_parameter_suffix = suffix
-# Optional: sync other values to ensure consistency
-env.neg_inaction_reward = neg_inaction_reward
+def set_global_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
+# Standard 5 seeds for RL publications
+seeds = [42, 123, 456, 789, 999]
+# seeds = [0, 222, 333, 444, 555]
 
+for seed in seeds:
+    print(f"\n======================================")
+    print(f"= Starting Training Run - Seed {seed}    =")
+    print(f"======================================")
+    
+    set_global_seed(seed)
+    
+    # 1. Re-initialize for each seed to clear history
+    env = FullyTaskedBatteryLessWorldEnv()
+    env.training = True 
+    env.combined = combined
+    env.trainingPayload = trainingPayload
+    env.neg_inaction_reward = neg_inaction_reward
 
-if combined == True:
-    model = PPO("MlpPolicy", env, gamma=gam, verbose=0, tensorboard_log="./RLModelData/experiments_combined/PPO_experiments/")
-else:
-    model = PPO("MlpPolicy", env, gamma=gam, verbose=0, tensorboard_log="./RLModelData/experiments_solar/PPO_experiments/")
+    # 2. Append seed to the suffix so files don't overwrite each other
+    seed_suffix = suffix + f"_SEED_{seed}"
+    env.training_parameter_suffix = seed_suffix
 
+    log_dir = f"./RLModelData/experiments_{'combined' if combined else 'solar'}/PPO_experiments/"
+    
+    # 3. Pass the seed directly to Stable-Baselines3
+    model = PPO("MlpPolicy", env, gamma=gam, verbose=0, seed=seed, tensorboard_log=log_dir)
 
-eval_callback = EvalCallback(model.env, eval_freq = episode_length * 10, n_eval_episodes=4, deterministic=True, render=False) 
+    eval_callback = EvalCallback(model.env, eval_freq=episode_length * 10, n_eval_episodes=4, deterministic=True, render=False) 
 
+    # 4. Train the seeded model
+    model.learn(total_timesteps=5000000, tb_log_name='PPO_' + seed_suffix, progress_bar=True, callback=eval_callback)
 
-
-model.learn(total_timesteps=1000000, tb_log_name='PPO_' + suffix, progress_bar=True, callback= eval_callback) # TEST NEW WAY OF TRAINING FOR NEW DATA 1 MINUTE INTERVAL WITH INTERPOLATION --> TOTAl NR OF STEPS - EVAL STEPS (15 * 10 * 500)
-
-
-if combined == True:   
-    model.save('./RLModelData/experiments_combined/models/rl_model_final' + suffix) 
-else:
-    model.save('./RLModelData/experiments_solar/models/rl_model_final' + suffix)
-
-
-# Save the training CSVs
-print("Saving training logs to CSV...")
-env.unwrapped.save_results()
+    # 5. Save the seeded model and training CSVs
+    model_dir = f"./RLModelData/experiments_{'combined' if combined else 'solar'}/models/rl_model_final{seed_suffix}"
+    model.save(model_dir)
+    env.unwrapped.save_results()
 
 
 from typing import List, Any, Tuple
