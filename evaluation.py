@@ -56,8 +56,11 @@ seeds = [42, 123, 456, 789, 999]
 # --- Replace your current trend_data dictionary with these two ---
 metric_keys = ['mean_iti', 'mean_daily_success', 'median_survival', 'median_max_daily_iti', 'median_off_time_duration']
 
+# trend_data_mean = {key: {label: [] for label in labels_all} for key in metric_keys}
+# trend_data_std = {key: {label: [] for label in labels_all} for key in metric_keys}
 trend_data_mean = {key: {label: [] for label in labels_all} for key in metric_keys}
-trend_data_std = {key: {label: [] for label in labels_all} for key in metric_keys}
+trend_data_p25 = {key: {label: [] for label in labels_all} for key in metric_keys} # NEW
+trend_data_p75 = {key: {label: [] for label in labels_all} for key in metric_keys} # NEW
 
 # ---------------------------------------------------------
 # 2. Helper Functions
@@ -218,12 +221,15 @@ for c in cap_sizes:
 
     # Aggregate agent metrics across seeds
     for metric in metric_keys:
-        trend_data_mean[metric]['Agent (ITI)'].append(np.nanmean(agent_metrics['jitter'][metric]) if agent_metrics['jitter'][metric] else np.nan)
-        trend_data_std[metric]['Agent (ITI)'].append(np.nanstd(agent_metrics['jitter'][metric]) if agent_metrics['jitter'][metric] else 0)
+        # ITI Agent
+        trend_data_mean[metric]['Agent (ITI)'].append(np.nanmedian(agent_metrics['jitter'][metric]) if agent_metrics['jitter'][metric] else np.nan)
+        trend_data_p25[metric]['Agent (ITI)'].append(np.nanpercentile(agent_metrics['jitter'][metric], 25) if agent_metrics['jitter'][metric] else np.nan)
+        trend_data_p75[metric]['Agent (ITI)'].append(np.nanpercentile(agent_metrics['jitter'][metric], 75) if agent_metrics['jitter'][metric] else np.nan)
         
-        trend_data_mean[metric]['Agent (Off-Time)'].append(np.nanmean(agent_metrics['off_time'][metric]) if agent_metrics['off_time'][metric] else np.nan)
-        trend_data_std[metric]['Agent (Off-Time)'].append(np.nanstd(agent_metrics['off_time'][metric]) if agent_metrics['off_time'][metric] else 0)
-
+        # Off-Time Agent
+        trend_data_mean[metric]['Agent (Off-Time)'].append(np.nanmedian(agent_metrics['off_time'][metric]) if agent_metrics['off_time'][metric] else np.nan)
+        trend_data_p25[metric]['Agent (Off-Time)'].append(np.nanpercentile(agent_metrics['off_time'][metric], 25) if agent_metrics['off_time'][metric] else np.nan)
+        trend_data_p75[metric]['Agent (Off-Time)'].append(np.nanpercentile(agent_metrics['off_time'][metric], 75) if agent_metrics['off_time'][metric] else np.nan)
     # --- B. Process Baselines (No variance/seeds) ---
     try:
         b_succ = np.loadtxt(f'staticThreshModelData/successList{baseline_suffix_opt}.csv', delimiter='\t')
@@ -266,14 +272,16 @@ for c in cap_sizes:
             
             # Baselines have 0 standard deviation
             for metric in metric_keys:
-                trend_data_std[metric][label].append(0)
+                trend_data_p25[metric][label].append(trend_data_mean[metric][label][-1])
+                trend_data_p75[metric][label].append(trend_data_mean[metric][label][-1])
 
     except Exception as e:
         print(f"Skipping baseline for cap size {c} due to missing data: {e}")
         for label in ['Opt. Static Thresh.', 'Static (1.9V)', 'Static (3.45V)', 'Approx. Pred.', 'ST Oracle', 'AsTAR']:
             for metric in metric_keys:
                 trend_data_mean[metric][label].append(np.nan)
-                trend_data_std[metric][label].append(0)
+                trend_data_p25[metric][label].append(trend_data_mean[metric][label][-1])
+                trend_data_p75[metric][label].append(trend_data_mean[metric][label][-1])
 
 print("Data extraction complete. Generating plots...")
 
@@ -287,26 +295,26 @@ def plot_trend(metric_key, title, ylabel, filename, use_log=False, ymin=None, ym
     plt.figure(figsize=(10, 6))
     for i, label in enumerate(labels_all):
         y_mean = np.array(trend_data_mean[metric_key][label])
-        y_std = np.array(trend_data_std[metric_key][label])
+        y_p25 = np.array(trend_data_p25[metric_key][label])
+        y_p75 = np.array(trend_data_p75[metric_key][label])
         
-        # Filter out NaN values so the plot line doesn't break
         valid_mask = ~np.isnan(y_mean)
         x_valid = np.array(cap_sizes)[valid_mask]
         y_mean_valid = y_mean[valid_mask]
-        y_std_valid = y_std[valid_mask]
+        y_p25_valid = y_p25[valid_mask]
+        y_p75_valid = y_p75[valid_mask]
         
-        if len(x_valid) == 0:
-            continue
+        if len(x_valid) == 0: continue
             
         plt.plot(x_valid, y_mean_valid, label=label.replace('\n', ' '), 
                  color=colors[i], marker=markers[i], linestyle=linestyles[i],
                  linewidth=3, markersize=8, alpha=0.9)
                  
-        # Add shaded confidence interval if standard deviation > 0 (RL Agents)
-        if np.any(y_std_valid > 0):
+        # If the 75th percentile is strictly greater than the 25th, we have variance to shade
+        if np.any(y_p75_valid > y_p25_valid):
             plt.fill_between(x_valid, 
-                             y_mean_valid - y_std_valid, 
-                             y_mean_valid + y_std_valid, 
+                             y_p25_valid, 
+                             y_p75_valid, 
                              color=colors[i], alpha=0.2)
     
     if use_log: 
